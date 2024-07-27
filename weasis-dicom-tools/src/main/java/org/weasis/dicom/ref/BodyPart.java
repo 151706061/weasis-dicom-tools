@@ -404,22 +404,27 @@ public enum BodyPart implements AnatomicItem {
     this.endoscopic = endoscopic;
   }
 
+  @Override
   public String getCodeValue() {
     return codeValue;
   }
 
+  @Override
   public String getCodeMeaning() {
     return MesBody.getString(codeValue);
   }
 
-  public CodingScheme getScheme() {
+  @Override
+  public CodingScheme getCodingScheme() {
     return scheme;
   }
 
+  @Override
   public String getLegacyCode() {
     return legacyCode;
   }
 
+  @Override
   public boolean isPaired() {
     return paired;
   }
@@ -435,5 +440,9 @@ public enum BodyPart implements AnatomicItem {
   @Override
   public String toString() {
     return getCodeMeaning();
+  }
+
+  public static BodyPart getBodyPartFromCode(String code) {
+    return AnatomicBuilder.getBodyPartFromCode(code);
   }
 }

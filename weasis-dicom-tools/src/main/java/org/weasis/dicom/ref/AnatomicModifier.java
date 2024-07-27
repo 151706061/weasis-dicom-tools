@@ -12,7 +12,9 @@ package org.weasis.dicom.ref;
 import static org.weasis.dicom.ref.CodingScheme.DCM;
 import static org.weasis.dicom.ref.CodingScheme.SCT;
 
-public enum AnatomicModifier {
+import org.weasis.dicom.macro.ItemCode;
+
+public enum AnatomicModifier implements ItemCode {
   RIGHT(SCT, 24028007),
   LEFT(SCT, 7771000),
   BILATERAL(SCT, 51440002),
@@ -68,20 +70,27 @@ public enum AnatomicModifier {
     this.codeValue = String.valueOf(codeValue);
   }
 
+  @Override
   public String getCodeValue() {
     return codeValue;
   }
 
+  @Override
   public String getCodeMeaning() {
     return MesModifier.getString(codeValue);
   }
 
-  public CodingScheme getScheme() {
+  @Override
+  public CodingScheme getCodingScheme() {
     return scheme;
   }
 
   @Override
   public String toString() {
     return getCodeMeaning();
+  }
+
+  public static AnatomicModifier getAnatomicModifierFromCode(String code) {
+    return AnatomicBuilder.getAnatomicModifierFromCode(code);
   }
 }
