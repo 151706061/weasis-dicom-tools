@@ -49,9 +49,10 @@ public class DicomImageAdapter {
   private List<PresetWindowLevel> windowingPresetCollection = null;
 
   public DicomImageAdapter(PlanarImage image, ImageDescriptor desc) {
+    int depth = CvType.depth(Objects.requireNonNull(image).type());
     this.desc = Objects.requireNonNull(desc);
-    this.bitsStored = desc.getBitsStored();
-    this.minMax = findMinMaxValues(Objects.requireNonNull(image));
+    this.bitsStored = depth > CvType.CV_16S ? (int) image.elemSize1() * 8 : desc.getBitsStored();
+    this.minMax = findMinMaxValues(image);
     /*
      * Lazily compute image pixel transformation here since inner class Load is called from a separate and dedicated
      * worker Thread. Also, it will be computed only once
@@ -369,11 +370,9 @@ public class DicomImageAdapter {
   public boolean isPhotometricInterpretationInverse(PresentationStateLut pr) {
     Optional<String> prLUTShape = pr == null ? Optional.empty() : pr.getPrLutShapeMode();
     PhotometricInterpretation p = desc.getPhotometricInterpretation();
-    if (prLUTShape.isPresent()) {
-      return ("INVERSE".equals(prLUTShape.get()) && p == PhotometricInterpretation.MONOCHROME2)
-          || ("IDENTITY".equals(prLUTShape.get()) && p == PhotometricInterpretation.MONOCHROME1);
-    }
-    return p == PhotometricInterpretation.MONOCHROME1;
+    return prLUTShape
+        .map("INVERSE"::equals)
+        .orElseGet(() -> p == PhotometricInterpretation.MONOCHROME1);
   }
 
   public LutParameters getLutParameters(
