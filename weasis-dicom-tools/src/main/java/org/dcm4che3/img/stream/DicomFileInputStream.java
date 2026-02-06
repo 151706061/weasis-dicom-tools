@@ -46,8 +46,23 @@ public class DicomFileInputStream extends DicomInputStream implements ImageReade
    * @throws IllegalArgumentException if the path is null
    */
   public DicomFileInputStream(Path path) throws IOException {
+    this(path, null);
+  }
+
+  /**
+   * Constructs a new DICOM file input stream from the specified file path and metadata. This
+   * constructor allows pre-associating metadata with the stream when it is cached, which can
+   * improve performance if metadata is already available.
+   *
+   * @param path the path to the DICOM file, must not be null and must exist
+   * @param metadata the DICOM metadata to associate with this stream, may be null
+   * @throws IOException if an I/O error occurs while opening the file
+   * @throws IllegalArgumentException if the path is null
+   */
+  public DicomFileInputStream(Path path, DicomMetaData metadata) throws IOException {
     super(Files.newInputStream(Objects.requireNonNull(path, "Path cannot be null")));
     this.path = path;
+    this.metadata.set(metadata);
   }
 
   /**

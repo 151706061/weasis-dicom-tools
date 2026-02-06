@@ -25,7 +25,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 import org.dcm4che3.data.Attributes;
 import org.dcm4che3.data.Tag;
 import org.dcm4che3.data.UID;
@@ -41,8 +40,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
@@ -234,15 +231,6 @@ class DicomImageReaderTest {
     assertTrue(DicomImageReader.isSupportedSyntax(UID.JPEGBaseline8Bit));
     assertTrue(DicomImageReader.isSupportedSyntax(UID.JPEG2000Lossless));
     assertFalse(DicomImageReader.isSupportedSyntax("1.2.3.4.5.6.7.8.9"));
-
-    // Test float image conversion cache
-    var seriesUID = "1.2.3.4.5.6.7.8.9.10";
-
-    DicomImageReader.addSeriesToFloatImages(seriesUID, true);
-    assertTrue(DicomImageReader.getForceToFloatImages(seriesUID));
-
-    DicomImageReader.removeSeriesToFloatImages(seriesUID);
-    assertNull(DicomImageReader.getForceToFloatImages(seriesUID));
   }
 
   @Test
@@ -276,131 +264,6 @@ class DicomImageReaderTest {
     // Test large standard VRs
     assertTrue(descriptor.isBulkData(List.of(), null, Tag.StudyDescription, VR.OB, 100));
     assertFalse(descriptor.isBulkData(List.of(), null, Tag.StudyDescription, VR.LO, 30));
-  }
-
-  @Nested
-  class Rescale_Operations_Tests {
-
-    @ParameterizedTest
-    @MethodSource("modalityTestCases")
-    void range_outside_lut_with_modality_data(ModalityTestCase testCase) throws IOException {
-      readDicomFile("mono2-CT-16bit.dcm");
-      var descriptor = createTestDescriptor(testCase);
-      var testImage = createTestImage(100, 100, CvType.CV_16U);
-
-      try {
-        var result =
-            DicomImageReader.rangeOutsideLut(testImage, descriptor, 0, testCase.forceFloat);
-
-        assertNotNull(result);
-        assertEquals(testImage.width(), result.width());
-        assertEquals(testImage.height(), result.height());
-
-        if (testCase.shouldBeFloat) {
-          assertEquals(CvType.CV_32F, CvType.depth(result.type()));
-        }
-
-        if (!result.equals(testImage)) {
-          result.release();
-        }
-      } finally {
-        testImage.release();
-      }
-    }
-
-    @Test
-    void range_outside_lut_with_real_dicom_files() throws IOException {
-      var testFiles = List.of("mono2-CT-16bit.dcm", "signed-raw-9bit.dcm");
-
-      for (var filename : testFiles) {
-        readDicomFile(filename);
-        var descriptor = reader.getImageDescriptor();
-        var rawImage = reader.getRawImage(0, null);
-
-        try {
-          // Test normal conversion
-          var result1 = DicomImageReader.rangeOutsideLut(rawImage, descriptor, 0, false);
-          assertNotNull(result1, "Result for " + filename + " should not be null");
-
-          // Test forced conversion
-          var result2 = DicomImageReader.rangeOutsideLut(rawImage, descriptor, 0, true);
-          assertNotNull(result2, "Forced result for " + filename + " should not be null");
-
-          // Verify dimensions preserved
-          assertEquals(rawImage.width(), result1.width());
-          assertEquals(rawImage.height(), result1.height());
-          assertEquals(rawImage.width(), result2.width());
-          assertEquals(rawImage.height(), result2.height());
-
-          // Clean up
-          if (!result1.equals(rawImage)) result1.release();
-          if (!result2.equals(rawImage)) result2.release();
-
-        } finally {
-          rawImage.release();
-        }
-      }
-    }
-
-    @Test
-    void range_outside_lut_with_float_conversion_settings() throws IOException {
-      readDicomFile("mono2-CT-16bit.dcm");
-      var descriptor = reader.getImageDescriptor();
-      var rawImage = reader.getRawImage(0, null);
-
-      try {
-        var seriesUID = descriptor.getSeriesInstanceUID();
-        if (seriesUID != null) {
-          // Test with series marked for float conversion
-          DicomImageReader.addSeriesToFloatImages(seriesUID, true);
-
-          var result = DicomImageReader.rangeOutsideLut(rawImage, descriptor, 0, false);
-          assertNotNull(result);
-
-          DicomImageReader.removeSeriesToFloatImages(seriesUID);
-
-          if (!result.equals(rawImage)) {
-            result.release();
-          }
-        }
-      } finally {
-        rawImage.release();
-      }
-    }
-
-    static Stream<Arguments> modalityTestCases() {
-      return Stream.of(
-          Arguments.of(new ModalityTestCase("Normal slope", 1.0, 0.0, false, false)),
-          Arguments.of(new ModalityTestCase("Small slope", 0.3, 100.0, false, true)),
-          Arguments.of(new ModalityTestCase("Negative slope", -0.5, 2048.0, false, true)),
-          Arguments.of(new ModalityTestCase("Forced float", 1.0, 0.0, true, true)));
-    }
-
-    record ModalityTestCase(
-        String name, double slope, double intercept, boolean forceFloat, boolean shouldBeFloat) {
-      @Override
-      public String toString() {
-        return name;
-      }
-    }
-
-    private ImageDescriptor createTestDescriptor(ModalityTestCase testCase) {
-      var attrs = new Attributes();
-      attrs.setInt(Tag.Rows, VR.US, 100);
-      attrs.setInt(Tag.Columns, VR.US, 100);
-      attrs.setInt(Tag.NumberOfFrames, VR.IS, 1);
-      attrs.setInt(Tag.SamplesPerPixel, VR.US, 1);
-      attrs.setInt(Tag.BitsAllocated, VR.US, 16);
-      attrs.setInt(Tag.BitsStored, VR.US, 16);
-      attrs.setInt(Tag.HighBit, VR.US, 15);
-      attrs.setInt(Tag.PixelRepresentation, VR.US, testCase.slope < 0 ? 1 : 0);
-      attrs.setString(
-          Tag.PhotometricInterpretation, VR.CS, testCase.slope < 0 ? "MONOCHROME1" : "MONOCHROME2");
-      attrs.setDouble(Tag.RescaleSlope, VR.DS, testCase.slope);
-      attrs.setDouble(Tag.RescaleIntercept, VR.DS, testCase.intercept);
-
-      return new ImageDescriptor(attrs);
-    }
   }
 
   @Nested

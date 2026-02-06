@@ -22,10 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
-import java.util.OptionalDouble;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BooleanSupplier;
 import java.util.stream.IntStream;
 import javax.imageio.ImageReadParam;
@@ -39,6 +36,7 @@ import org.dcm4che3.image.PhotometricInterpretation;
 import org.dcm4che3.imageio.codec.TransferSyntaxType;
 import org.dcm4che3.imageio.codec.XPEGParserException;
 import org.dcm4che3.imageio.codec.jpeg.JPEGParser;
+import org.dcm4che3.img.lut.ModalityLutModule;
 import org.dcm4che3.img.stream.BytesWithImageDescriptor;
 import org.dcm4che3.img.stream.DicomFileInputStream;
 import org.dcm4che3.img.stream.ExtendSegmentedInputImageStream;
@@ -62,7 +60,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.weasis.core.util.Pair;
 import org.weasis.core.util.StreamUtil;
-import org.weasis.core.util.StringUtil;
 import org.weasis.opencv.data.ImageCV;
 import org.weasis.opencv.data.LookupTableCV;
 import org.weasis.opencv.data.PlanarImage;
@@ -118,8 +115,6 @@ public class DicomImageReader extends ImageReader {
           Tag.PixelData);
 
   public static final BulkDataDescriptor BULK_DATA_DESCRIPTOR = DicomImageReader::shouldBeBulkData;
-
-  private static final Map<String, Boolean> series2FloatImages = new ConcurrentHashMap<>();
 
   private final List<Integer> fragmentsPositions = new ArrayList<>();
 
@@ -362,31 +357,21 @@ public class DicomImageReader extends ImageReader {
 
   private PlanarImage applyFloatConversion(
       PlanarImage image, ImageDescriptor desc, int frameIndex) {
-    String seriesUID = desc.getSeriesInstanceUID();
-    if (!StringUtil.hasText(seriesUID)) return image;
-    Boolean isFloatPixelData = series2FloatImages.get(seriesUID);
-    if (isFloatPixelData == Boolean.FALSE) return image;
-
-    PlanarImage result = rangeOutsideLut(image, desc, frameIndex, isFloatPixelData != null);
-    series2FloatImages.put(seriesUID, CvType.depth(result.type()) == CvType.CV_32F);
-
-    return result;
-  }
-
-  /** Converts image to float if modality LUT values exceed standard ranges. */
-  static PlanarImage rangeOutsideLut(
-      PlanarImage input, ImageDescriptor desc, int frameIndex, boolean forceFloat) {
-    OptionalDouble rescaleSlope = desc.getModalityLutForFrame(frameIndex).getRescaleSlope();
-    if (!forceFloat && rescaleSlope.isEmpty()) return input;
-    double slope = rescaleSlope.orElse(1.0);
-    double intercept = desc.getModalityLutForFrame(frameIndex).getRescaleIntercept().orElse(0.0);
-    MinMaxLocResult minMax = DicomImageAdapter.getMinMaxValues(input, desc, frameIndex);
+    ModalityLutModule mLut = desc.getModalityLutForFrame(frameIndex);
+    boolean forceFloat = mLut.isReset();
+    if (!forceFloat && mLut.getRescaleSlope().isEmpty()) return image;
+    double slope = mLut.getRescaleSlope().orElse(1.0);
+    double intercept = mLut.getRescaleIntercept().orElse(0.0);
+    MinMaxLocResult minMax = DicomImageAdapter.getMinMaxValues(image, desc, frameIndex);
     Pair<Double, Double> rescale = getRescaleSlopeAndIntercept(slope, intercept, minMax);
     if (forceFloat || slope < 0.5 || rangeOutsideLut(rescale, desc)) {
-      return convertToFloatImage(input, slope, intercept, rescale, desc);
+      if (!forceFloat) {
+        desc.resetModalityLutForFrame(frameIndex);
+      }
+      return convertToFloatImage(image, slope, intercept, rescale, desc);
     }
 
-    return input;
+    return image;
   }
 
   private static PlanarImage convertToFloatImage(
@@ -964,35 +949,6 @@ public class DicomImageReader extends ImageReader {
           true;
       default -> false;
     };
-  }
-
-  /**
-   * Adds a series to the cache for float image conversion.
-   *
-   * @param seriesInstanceUID the series instance UID
-   * @param forceToFloatImages true to force conversion to float images
-   */
-  public static void addSeriesToFloatImages(String seriesInstanceUID, Boolean forceToFloatImages) {
-    series2FloatImages.put(seriesInstanceUID, forceToFloatImages);
-  }
-
-  /**
-   * Checks if a series is marked for float image conversion.
-   *
-   * @param seriesInstanceUID the series instance UID
-   * @return true if the series is marked for float conversion, false otherwise
-   */
-  public static Boolean getForceToFloatImages(String seriesInstanceUID) {
-    return series2FloatImages.get(seriesInstanceUID);
-  }
-
-  /**
-   * Removes a series from the float conversion cache.
-   *
-   * <p><strong>Note:</strong> Call when series is disposed to prevent memory leaks.
-   */
-  public static void removeSeriesToFloatImages(String seriesInstanceUID) {
-    series2FloatImages.remove(seriesInstanceUID);
   }
 
   // Private utility methods for resource management

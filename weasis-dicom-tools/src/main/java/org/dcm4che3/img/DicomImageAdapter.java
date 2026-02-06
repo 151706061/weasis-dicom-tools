@@ -323,7 +323,7 @@ public class DicomImageAdapter {
     double intercept = getRescaleIntercept(pr);
     double slope = getRescaleSlope(pr);
 
-    if (isIdentityTransformation(slope, intercept, paddingValue)) {
+    if (bitsStored > 16 || isIdentityTransformation(slope, intercept, paddingValue)) {
       return null;
     }
 
@@ -557,8 +557,7 @@ public class DicomImageAdapter {
   /** Checks if transformation is identity (optimization) */
   private boolean isIdentityTransformation(
       double slope, double intercept, Optional<Integer> paddingValue) {
-    return bitsStored <= 16
-        && MathUtil.isEqual(slope, 1.0)
+    return MathUtil.isEqual(slope, 1.0)
         && MathUtil.isEqualToZero(intercept)
         && paddingValue.isEmpty();
   }

@@ -57,6 +57,7 @@ public final class ModalityLutModule {
   private final String lutType;
   private final String lutExplanation;
   private final LookupTableCV lut;
+  private final boolean isReset;
 
   /**
    * Creates a new ModalityLutModule from DICOM attributes.
@@ -68,6 +69,7 @@ public final class ModalityLutModule {
     Objects.requireNonNull(dcm, "DICOM attributes cannot be null");
     final var initialization = initializeFromDicom(dcm);
 
+    this.isReset = false;
     this.overlayBitMaskApplied = false;
     this.rescaleSlope = initialization.rescaleSlope();
     this.rescaleIntercept = initialization.rescaleIntercept();
@@ -79,14 +81,15 @@ public final class ModalityLutModule {
 
   /** Private constructor for creating instances with overlay bit mask applied. */
   private ModalityLutModule(
-      final boolean overlayBitMaskApplied,
-      final Double rescaleSlope,
-      final Double rescaleIntercept,
-      final String rescaleType,
-      final String lutType,
-      final String lutExplanation,
-      final LookupTableCV lut) {
-
+      boolean isReset,
+      boolean overlayBitMaskApplied,
+      Double rescaleSlope,
+      Double rescaleIntercept,
+      String rescaleType,
+      String lutType,
+      String lutExplanation,
+      LookupTableCV lut) {
+    this.isReset = isReset;
     this.overlayBitMaskApplied = overlayBitMaskApplied;
     this.rescaleSlope = rescaleSlope;
     this.rescaleIntercept = rescaleIntercept;
@@ -238,6 +241,7 @@ public final class ModalityLutModule {
     final var defaults = calculateDefaults();
 
     return new ModalityLutModule(
+        this.isReset,
         true,
         adjustedSlope,
         defaults.intercept(),
@@ -266,6 +270,13 @@ public final class ModalityLutModule {
     return overlayBitMaskApplied;
   }
 
+  /**
+   * @return true if this instance represents a reset state with default values
+   */
+  public boolean isReset() {
+    return isReset;
+  }
+
   /** Record for holding initialization data during construction. */
   private record InitializationData(
       Double rescaleSlope, Double rescaleIntercept, String rescaleType, LutData lutData) {}
@@ -275,4 +286,8 @@ public final class ModalityLutModule {
 
   /** Record for holding default values during overlay bit mask calculation. */
   private record DefaultValues(Double intercept, String type) {}
+
+  public static ModalityLutModule getResetInstance() {
+    return new ModalityLutModule(true, false, null, null, null, null, null, null);
+  }
 }
